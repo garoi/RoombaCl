@@ -33,12 +33,6 @@ AST* createASTnode(Attrib* attr,int ttype, char *textt);
 //global structures
 AST *root;
 
-
-struct Pos {
-  int x;
-  int y;
-} novaPos;
-
 // function to fill token information
 void zzcr_attr(Attrib *attr, int type, char *text) {
   if (type == ID) {
@@ -125,45 +119,136 @@ bool SenseProx() { return (rand() % 2) == 0;}
 
 int SenseLight() { return rand() % 100;}
 
-void move(AST* a) {
+void move(AST* a, int& x, int& y) {
   int valorMoure = atoi(a->right->kind.c_str());
-  if (a->kind == "right") novaPos.x += valorMoure;
-  else if (a->kind == "left") novaPos.x -= valorMoure;
-  else if (a->kind == "up") novaPos.y += valorMoure;
-  else if (a->kind == "down") novaPos.y -= valorMoure;
+  if (a->kind == "right") x += valorMoure;
+  else if (a->kind == "left") x -= valorMoure;
+  else if (a->kind == "up") y += valorMoure;
+  else if (a->kind == "down") y -= valorMoure;
 }
-//parametre 1 condicio, parametre 2 instruccio
-void ife(AST* c, AST* i){
-  cout << "cond " << c->kind << endl;
-  cout << "inst " << i->kind << endl;
-}
-void ops(){}
-void exec(){}
 
-void findNewPosition(AST* a) {
-  if (a != NULL) {
-    cout << a->kind << endl;
-    if (a->kind == "move") move(child(a, 0));
-    else if (a->kind == "if") ife(child(a, 0), child(a, 1));
-    else if (a->kind == "ops") ops();
-    else if (a->kind == "exec") exec(); //no cridara a exec sino findNewPosition amb la tasca
-    findNewPosition(a->right);
+
+bool mesGran(AST* c) {
+  // el simbol > nomes fa referencia al sensorlight, pero aquest pot ser un numero
+  if (c->kind == "sensorlight") {
+    if (SenseLight() > atoi(c->right->kind.c_str())) return true;
+    else return false;
+  }
+  else {
+    //es un numero
+    if (atoi(c->kind.c_str()) > SenseLight()) return true;
+    else return false;
   }
 }
 
-void posicioInicial(AST* a) {
-  novaPos.x = atoi(a->kind.c_str());
-  novaPos.y = atoi(a->right->kind.c_str());
+bool igual(AST* c) {
+  /*pot ser:
+    sensorprox == ON
+    sensorprox == OFF
+    ON == sensorprox
+    OFF == sensorprox
+    sensorlight == NUM
+    NUM == sensorlight
+  */
+  if (c->kind == "sensorprox") {
+    bool ences = SenseProx();
+    if (c->right->kind == "ON" and ences) return true;
+    else if (c->right->kind == "OFF" and not ences) return true;
+    else return false;
+  }
+  else if (c->kind == "ON") {
+    //A la força a continuacio sera sensorprox, per aixo no ho comprovo
+    if (SenseProx()) return true;
+    else return false;
+  }
+  else if (c->kind == "OFF") {
+    //A la força a continuacio sera sensorprox, per aixo no ho comprovo
+    if (not SenseProx()) return true;
+    else return false;
+  }
+  else if (c->kind == "sensorlight") {
+    if (SenseLight() == atoi(c->right->kind.c_str())) return true;
+    else return false;
+  }
+  else {
+    if (SenseLight() == atoi(c->kind.c_str())) return true;
+    else return false;
+  }
 }
 
-void evaluar(AST *a) { //passar x y per parametre
-  if (a != NULL) {
-    if (a->down->kind == "position") posicioInicial(child(a->down, 0));
-    else return;
-    if (a->down->right->kind == "list") findNewPosition(child(a->down->right, 0)); //no fa falta la comprovacio
-    else {
-      cout << "El robot rooma no s'ha mogut, la seva posicio es: " << novaPos.x << " " << novaPos.y << endl;
+bool oOr(bool fillA, bool fillB) {
+  if (fillA or fillB) return true;
+  else return false;
+}
+
+bool iAnd(bool fillA, bool fillB) {
+  if (fillA and fillB) return true;
+  else return false;
+}
+
+bool ife(AST* c, bool& esCert) {
+  //evaluar la condicio
+  if (c != NULL) {
+    if (c->kind == "AND") {
+      if (iAnd(ife(child(c, 0), esCert), ife(child(c, 1), esCert))) esCert = true;
+      else esCert = false;
     }
+    else if (c->kind == "OR") {
+      if (oOr(ife(child(c, 0), esCert), ife(child(c, 1), esCert))) esCert = true;
+      else esCert = false;
+    }
+    else if (c->kind == "==") {
+      if (igual(child(c, 0))) esCert = true;
+      else esCert = false;
+    }
+    else if (c->kind == ">") {
+      if (mesGran(child(c, 0))) esCert = true;
+      else esCert = false;
+    }
+  }
+  if (esCert) return true;
+  else return false;
+}
+
+void evaluar(AST* a, int& x, int& y) {
+  if (a != NULL) {
+    // cout << a->kind << endl;
+    if (a->kind == "move") move(child(a, 0), x, y);
+    else if (a->kind == "if") {
+      bool esCert = false;
+      if (ife(child(a, 0), esCert)) evaluar(child(a, 1), x, y);
+    }
+    else if (a->kind == "ops") {
+      evaluar(child(a, 0), x, y);
+    }
+    else if (a->kind == "exec") {
+      evaluar(child(findTask(a->down->text),0), x, y);
+    }
+    evaluar(a->right, x, y);
+  }
+}
+
+void posicioInicial(AST* a, int& x, int& y) {
+  x = atoi(a->kind.c_str());
+  y = atoi(a->right->kind.c_str());
+}
+
+void findNewPosition(AST *a) { //passar x y per parametre
+  if (a != NULL) {
+    int x, y;
+    if (a->down->kind == "position") {
+      posicioInicial(child(a->down, 0), x, y);
+      cout << "#####################################################################" << endl;
+      cout << "##  Hola, soc en Roomba, i aquests han sigut els meus moviments:   ##" << endl;
+      cout << "##  La posicio inicial era " << x << " " << y << "                                  ##" << endl;
+    }
+    else return;
+    evaluar(child(a->down->right, 0), x, y);
+      cout << "##  La posicio final es: " << x << " " << y << "                                   ##" << endl;
+      cout << "#####################################################################" << endl;
+    // else { IDEA PER FER-HO MES BONIC
+    //   cout << "El robot roobma no s'ha mogut, la seva posicio es: " << x << " " << y << endl;
+    // }
   }
   else return;
 }
@@ -173,8 +258,7 @@ int main() {
   root = NULL;
   ANTLR(roomba(&root), stdin);
   ASTPrint(root);
-  //findNewPosition() ha de estar aqui per collos
-  evaluar(root);
+  findNewPosition(root);
 }
 >>
 
@@ -186,7 +270,7 @@ int main() {
 #token RIGHT "right"
 #token UP "up"
 #token MOVE "move"
-#token BOTTOM "down"
+#token DOWN "down"
 #token LEFT "left"
 #token FLUSH "flush"
 #token THEN "then"
@@ -221,15 +305,15 @@ insttask: (inst)* ENDT! <<#0=createASTlist(_sibling);>>;
 
 inst: move | flush | exec | ife | ops;
 
-move: MOVE^ (RIGHT | LEFT | UP | BOTTOM) NUM;
+move: MOVE^ (RIGHT | LEFT | UP | DOWN) NUM;
 
 flush: FLUSH^ NUM;
 
-ife: IF^ condicioif THEN! (move | flush | exec | ops);
+ife: IF^ condicioif THEN! inst;
 condicioif: sensor ((AND^ | OR^) sensor)*;
 sensor: (SENSORLIGHT (GT^ |EQUAL^) NUM) | (SENSORPROX EQUAL^ (ON | OFF)) | (NUM (GT^ |EQUAL^) SENSORLIGHT) | ((ON | OFF) EQUAL^ SENSORPROX);  //mateix tipus dreta esquerra, light ==
 
-ops: OPS^ CLAUO! ( | opsaux) CLAUT!;  //pot ser buit
+ops: OPS^ CLAUO! ( | opsaux) CLAUT!;
 opsaux: inst (COMA! inst)*;
 
 exec: EXEC^ ID;
