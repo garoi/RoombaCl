@@ -5,7 +5,7 @@ if sensorprox == ON then
     flush 180
 exec t1
 ops [move left 2, exec t1, flush 90]
-if sensorlight > 16 AND sensorprox == OFF then
+if sensorlight > 16 AND OFF == sensorprox OR sensorprox == ON AND sensorlight > 18 then
 	ops [flush 90, exec t1, ops [flush 10, move left 10]]
 endcleaning
 

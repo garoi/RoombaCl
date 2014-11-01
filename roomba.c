@@ -61,7 +61,7 @@ ANTLR_INFO
 
 #include <cstdlib>
 #include <cmath>
-
+#include <string>
 //global structures
 AST *root;
 
@@ -147,40 +147,77 @@ void ASTPrint(AST *a)
   }
 }
 
+void pintarAster() {
+  cout << "#####################################################################" << endl;
+}
+
+void imprimirResultat(bool inici, bool final, bool noMogut, bool retornBase, bool flush, bool mou, int x, int y, int cantitat) {
+  if (mou) {
+    cout << "Em moc a la poscicio " << x << " " << y << endl;
+  }
+  else if (flush) {
+    cout << "Expulso " << cantitat << " de liquid a la posicio " << x << " " << y << endl;
+  }
+  else if (inici) {
+    cout << endl;
+    pintarAster();
+    cout << "Hola, soc en Roomba, i aquests han sigut els meus moviments:" << endl;
+    cout << "La posicio inicial era " << x << " " << y << endl;
+  }
+  else if (final and retornBase) {
+    cout << endl << "La posicio final es: " << x << " " << y << " he tornat a la posicicio inicial" << endl;
+    pintarAster();
+  }
+  else if (final) {
+    cout << endl << "La posicio final es: " << x << " " << y << endl;
+    pintarAster();
+  }
+  else if (noMogut) {
+    cout << endl << "El robot roobma no s'ha mogut, la seva posicio es: " << x << " " << y << endl;
+    pintarAster();
+  }
+}
+
 bool SenseProx() { return (rand() % 2) == 0;}
 
 int SenseLight() { return rand() % 100;}
 
 void move(AST* a, int& x, int& y) {
+  // Obtinc el valor a moure i comprovo la direccio
   int valorMoure = atoi(a->right->kind.c_str());
   if (a->kind == "right") x += valorMoure;
   else if (a->kind == "left") x -= valorMoure;
   else if (a->kind == "up") y += valorMoure;
   else if (a->kind == "down") y -= valorMoure;
+  imprimirResultat(false, false, false, false, false, true, x, y, 0);
 }
 
+void flush(AST* a, int& x, int& y) {
+  // Obtinc el valor de flush
+  int cantitat = atoi(a->kind.c_str());
+  imprimirResultat(false, false, false, false, true, false, x, y, cantitat);
+  // Imprimir la posicio del flush i la cantitat
+}
 
+// Funcio que retorna true si la condicio (>) es certa
 bool mesGran(AST* c) {
-  // el simbol > nomes fa referencia al sensorlight, pero aquest pot ser un numero
+  // el simbol > nomes fa referencia al sensorlight, pero tambe pot començar amb un numero
   if (c->kind == "sensorlight") {
     if (SenseLight() > atoi(c->right->kind.c_str())) return true;
     else return false;
   }
   else {
-    //es un numero
+    //es numero, ha de continuar a la força per sensorlight, i per tant no fa falta comprovar-ho
     if (atoi(c->kind.c_str()) > SenseLight()) return true;
     else return false;
   }
 }
 
+// Funcio que retorna true si la condicio (==) es certa
 bool igual(AST* c) {
-  /*pot ser:
-  sensorprox == ON
-  sensorprox == OFF
-  ON == sensorprox
-  OFF == sensorprox
-  sensorlight == NUM
-  NUM == sensorlight
+  /* pot ser: sensorprox == ON, sensorprox == OFF, ON == sensorprox, OFF == sensorprox,
+  sensorlight == NUM, NUM == sensorlight
+  Miro en quin cas estic i comprovo si es compleix la condicio
   */
   if (c->kind == "sensorprox") {
     bool ences = SenseProx();
@@ -189,12 +226,12 @@ bool igual(AST* c) {
     else return false;
   }
   else if (c->kind == "ON") {
-    //A la força a continuacio sera sensorprox, per aixo no ho comprovo
+    //A la força a continuacio sera sensorprox, per aixo no faig la comprovacio
     if (SenseProx()) return true;
     else return false;
   }
   else if (c->kind == "OFF") {
-    //A la força a continuacio sera sensorprox, per aixo no ho comprovo
+    //A la força a continuacio sera sensorprox, per aixo no faig la comprovacio
     if (not SenseProx()) return true;
     else return false;
   }
@@ -218,8 +255,8 @@ bool iAnd(bool fillA, bool fillB) {
   else return false;
 }
 
+//Evaluem a true o false la condicio del if
 bool ife(AST* c, bool& esCert) {
-  //evaluar la condicio
   if (c != NULL) {
     if (c->kind == "AND") {
       if (iAnd(ife(child(c, 0), esCert), ife(child(c, 1), esCert))) esCert = true;
@@ -242,21 +279,31 @@ bool ife(AST* c, bool& esCert) {
   else return false;
 }
 
-void evaluar(AST* a, int& x, int& y) {
+void evaluar(AST* a, int& x, int& y, bool& moure) {
   if (a != NULL) {
-    // cout << a->kind << endl;
-    if (a->kind == "move") move(child(a, 0), x, y);
+    if (a->kind == "move") {
+      // Faig la instruccio move, i actualitzo les variables (x, y)
+      moure = true;
+      move(child(a, 0), x, y);
+    }
+    else if (a->kind == "flush") {
+      // Miro la cantitat de flush i miro la posicio a la que estic
+      flush(child(a, 0), x, y);
+    }
     else if (a->kind == "if") {
+      // Si la condicio del if es certa, evaluo la instruccio
       bool esCert = false;
-      if (ife(child(a, 0), esCert)) evaluar(child(a, 1), x, y);
+      if (ife(child(a, 0), esCert)) evaluar(child(a, 1), x, y, moure);
     }
     else if (a->kind == "ops") {
-      evaluar(child(a, 0), x, y);
+      // evaluo les instruccions del ops
+      evaluar(child(a, 0), x, y, moure);
     }
     else if (a->kind == "exec") {
-      evaluar(child(findTask(a->down->text),0), x, y);
+      // evaluo les instruccions de la tasca, amb findTask se on comença.
+      evaluar(child(findTask(a->down->text),0), x, y, moure);
     }
-    evaluar(a->right, x, y);
+    evaluar(a->right, x, y, moure);
   }
 }
 
@@ -265,22 +312,30 @@ void posicioInicial(AST* a, int& x, int& y) {
   y = atoi(a->right->kind.c_str());
 }
 
-void findNewPosition(AST *a) { //passar x y per parametre
+void findNewPosition(AST *a) {
   if (a != NULL) {
     int x, y;
+    int antX, antY;
     if (a->down->kind == "position") {
       posicioInicial(child(a->down, 0), x, y);
-      cout << "#####################################################################" << endl;
-      cout << "##  Hola, soc en Roomba, i aquests han sigut els meus moviments:   ##" << endl;
-      cout << "##  La posicio inicial era " << x << " " << y << "                                  ##" << endl;
+      antX = x;
+      antY = y;
+      imprimirResultat(true, false, false, false, false, false, x, y, 0);
     }
     else return;
-    evaluar(child(a->down->right, 0), x, y);
-    cout << "##  La posicio final es: " << x << " " << y << "                                   ##" << endl;
-    cout << "#####################################################################" << endl;
-    // else { IDEA PER FER-HO MES BONIC
-      //   cout << "El robot roobma no s'ha mogut, la seva posicio es: " << x << " " << y << endl;
-      // }
+    bool moure = false;
+    evaluar(child(a->down->right, 0), x, y, moure);
+    if (moure) {
+      if (x == antX and y == antY) {
+        imprimirResultat(false, true, false, true, false, false, x, y, 0);
+      }
+      else {
+        imprimirResultat(false, true, false, false, false, false, x, y, 0);
+      }
+    }
+    else {
+      imprimirResultat(false, false, true, false, false, false, x, y, 0);
+    }
   }
   else return;
 }
@@ -360,32 +415,8 @@ AST **_root;
     zzBLOCK(zztasp2);
     zzMake0;
     {
-    for (;;) {
-      if ( !((setwd1[LA(1)]&0x4))) break;
-      if ( (LA(1)==MOVE) ) {
-        move(zzSTR); zzlink(_root, &_sibling, &_tail);
-      }
-      else {
-        if ( (LA(1)==FLUSH) ) {
-          flush(zzSTR); zzlink(_root, &_sibling, &_tail);
-        }
-        else {
-          if ( (LA(1)==IF) ) {
-            ife(zzSTR); zzlink(_root, &_sibling, &_tail);
-          }
-          else {
-            if ( (LA(1)==EXEC) ) {
-              exec(zzSTR); zzlink(_root, &_sibling, &_tail);
-            }
-            else {
-              if ( (LA(1)==OPS) ) {
-                ops(zzSTR); zzlink(_root, &_sibling, &_tail);
-              }
-              else break; /* MR6 code for exiting loop "for sure" */
-            }
-          }
-        }
-      }
+    while ( (setwd1[LA(1)]&0x4) ) {
+      inst(zzSTR); zzlink(_root, &_sibling, &_tail);
       zzLOOP(zztasp2);
     }
     zzEXIT(zztasp2);
